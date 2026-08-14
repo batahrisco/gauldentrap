@@ -20,7 +20,7 @@ export default async function AdminLayout({
     <div className="mx-auto max-w-5xl px-4 py-8">
       {authed && (
         <nav className="mb-8 flex flex-wrap items-center gap-2 border-b border-line pb-4 text-sm">
-          <span className="font-display mr-2 text-xl text-accent">AVH ADMIN</span>
+          <span className="font-display mr-2 text-xl text-accent">GAULDENTRAP ADMIN</span>
           <Link href="/admin" className="rounded-md px-3 py-1.5 text-muted transition hover:bg-surface hover:text-foreground">
             Dashboard
           </Link>

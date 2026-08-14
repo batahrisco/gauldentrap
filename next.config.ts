@@ -38,12 +38,6 @@ const nextConfig: NextConfig = {
         hostname: "cdn.jsdelivr.net",
         pathname: "/gh/**",
       },
-      // admin-uploaded product images (Supabase Storage)
-      {
-        protocol: "https",
-        hostname: "*.supabase.co",
-        pathname: "/storage/v1/object/public/**",
-      },
     ],
   },
 };

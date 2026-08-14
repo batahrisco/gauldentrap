@@ -3,7 +3,7 @@
 Storefront for **gauldentrap.com** — Meridian Kush's catalog and design,
 rebuilt on a dynamic stack, with three nicotine ranges added.
 
-Next.js 16 (App Router, Turbopack) · Tailwind v4 · Supabase · Resend · Netlify.
+Next.js 16 (App Router, Turbopack) · Tailwind v4 · Netlify (hosting, Functions, Blobs) · Resend.
 
 ## Catalog — 924 products
 
@@ -37,7 +37,7 @@ Live-editable, no redeploy needed.
 
 | Setting | Effect |
 |---|---|
-| Payment methods | Each ticked method shows its badge in the footer **and** becomes a checkout option. Bank wire, card, PayPal, Apple/Google Pay, Bitcoin, USDT, Ethereum, plus a custom "other". |
+| Payment methods | 17, each with its own switch. Ticked methods show their badge in the footer **and** become a checkout option. Bank/wire; Visa, Mastercard, Amex, Discover; PayPal, Apple Pay, Google Pay, Cash App, Zelle, Venmo; Bitcoin, Ethereum, USDT, Litecoin, Monero; plus a custom "other". |
 | Checkout mode | `manual` (customer picks a method, you email details) or `direct` (your saved details show at checkout). |
 | WhatsApp / Telegram | Both always appear in the footer and on `/contact`. |
 | Floating button | Which messenger floats bottom-left. Tawk.to always holds bottom-right, so only one messenger fits there. |
@@ -54,19 +54,16 @@ cp .env.example .env.local   # fill in ADMIN_PASSWORD at minimum
 npm run dev
 ```
 
-Without `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`, storage falls back to
-the JSON files in `data/` — fine locally, not for production (Netlify
-functions have a read-only filesystem).
+Storage falls back to JSON files under `data/` whenever `NETLIFY` isn't set
+— fine locally, and it needs no setup. In production Netlify Blobs takes
+over automatically.
 
 ## Deploy (Netlify)
 
 1. Push to `github.com/batahrisco/gauldentrap`, connect the repo in Netlify.
    `netlify.toml` sets the build command and the Next.js runtime plugin.
-2. Run `supabase/schema.sql` once in the Supabase SQL editor
-   (project `vkbhgbhjkaidgujlkhog`) — one `store` table, RLS on, no public
-   policies.
-3. Set the environment variables from `.env.example` in Netlify.
-4. Verify `gauldentrap.com` as a sending domain in Resend and add its
+2. Set the environment variables from `.env.example` in Netlify.
+3. Verify `gauldentrap.com` as a sending domain in Resend and add its
    DKIM/SPF records. **Send-only — it does not touch MX**, so Spacemail keeps
    handling inbound mail for `support@`.
 
@@ -75,9 +72,11 @@ functions have a read-only filesystem).
 - **Prices are stored and charged in USD.** Variant products price per
   option; the server re-prices every line from the catalog at checkout, so a
   posted price or an unknown variant label can't be trusted or charged.
-- **`lib/reviews.ts` ships empty on purpose.** Publishing invented
-  testimonials breaches the FTC fake-review rule. The homepage hides the
-  whole section while the array is empty.
+- **Reviews came across with the design, not from customers.** The four
+  homepage testimonials in `lib/reviews.ts` and the per-product reviews on
+  713 products were ported from the reference site. They are not verified
+  purchases here — swap them for real ones as they come in. Emptying
+  `REVIEWS` hides the homepage section automatically.
 - **`lib/product.ts` vs `lib/catalog.ts`** — types and pure helpers live in
   `product.ts` with no `node:fs` import, so client components can use them.
   `catalog.ts` does the filesystem reads and re-exports everything.
@@ -89,9 +88,17 @@ functions have a read-only filesystem).
   `outputFileTracingIncludes` in `next.config.ts`, or it reads as empty in
   production.
 
+## Storage
+
+Netlify Blobs, provisioned automatically — no account, no keys, no schema.
+`lib/storage.ts` exposes a small key-value API (`kvGet/kvSet` for settings
+and admin auth, `hashGetAll/hashSet/...` for orders and subscribers) over
+two drivers: Blobs when `NETLIFY=true`, JSON files under `data/` otherwise.
+
+Admin image uploads go to a `product-images` blob store and are served back
+through `/api/uploads/<name>`, since blobs have no public URL of their own.
+
 ## Not yet ported
 
 - **Multi-currency switcher.** Meridian displayed USD/GBP/CAD/AUD/NZD/EUR
   from a client-side rate table. Prices here are USD only.
-- **Per-product reviews and FAQs.** Present in Meridian's product pages;
-  deliberately left out pending real review data.

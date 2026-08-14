@@ -1,36 +1,36 @@
 // Storage layer with two drivers:
-//  - Supabase (Postgres) when SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are
-//    set — used in production on Vercel, where the filesystem is ephemeral.
-//    Single table `store` (bucket, key, value jsonb) — see supabase/schema.sql.
+//  - Netlify Blobs in production — no account, no keys, no schema; the
+//    store is provisioned automatically for the site on deploy.
 //  - Local JSON files under data/ otherwise — used in dev, zero setup.
-// Server-only: the service-role key must never reach the client bundle.
+// Server-only. Everything the app persists (orders, subscribers, settings,
+// admin auth) is key-value, which is exactly what Blobs is.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-const useSupabase = () =>
-  !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+/**
+ * Netlify sets NETLIFY=true inside builds and functions. Outside that
+ * context getStore() has no credentials to work with, so dev falls through
+ * to the filesystem driver below.
+ */
+const onNetlify = () => process.env.NETLIFY === "true";
 
-let _client: import("@supabase/supabase-js").SupabaseClient | null = null;
-async function supabase() {
-  if (!_client) {
-    const { createClient } = await import("@supabase/supabase-js");
-    _client = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { auth: { persistSession: false } }
-    );
+type Store = {
+  get(key: string, opts?: { type: "json" }): Promise<unknown>;
+  setJSON(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<void>;
+  list(opts?: { prefix?: string }): Promise<{ blobs: { key: string }[] }>;
+};
+
+const stores = new Map<string, Store>();
+async function store(name: string): Promise<Store> {
+  let s = stores.get(name);
+  if (!s) {
+    const { getStore } = await import("@netlify/blobs");
+    s = getStore({ name, consistency: "strong" }) as unknown as Store;
+    stores.set(name, s);
   }
-  return _client;
-}
-
-const TABLE = "store";
-const KV_BUCKET = "kv";
-
-function fail(op: string, error: { message?: string } | null): never {
-  throw new Error(
-    `Supabase ${op} failed: ${error?.message ?? "unknown"} — has supabase/schema.sql been run?`
-  );
+  return s;
 }
 
 /* ── local file driver ── */
@@ -48,13 +48,13 @@ export function fsRead<T>(key: string): T | null {
 
 function fsWrite(key: string, value: unknown): void {
   // Serverless filesystems are read-only, so reaching here in production
-  // means Supabase isn't configured. Say so plainly rather than surfacing
-  // a confusing EROFS from deep inside a write.
+  // means we're not running on Netlify. Say so plainly rather than
+  // surfacing a confusing EROFS from deep inside a write.
   if (process.env.NODE_ENV === "production") {
     throw new Error(
-      "Supabase not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY " +
-        "in the host's environment variables. This host has a read-only " +
-        "filesystem, so orders and settings cannot be saved without it."
+      "No writable store: expected Netlify Blobs, but NETLIFY is not set. " +
+        "This host has a read-only filesystem, so orders and settings " +
+        "cannot be saved here."
     );
   }
   mkdirSync(path.dirname(fileFor(key)), { recursive: true });
@@ -63,45 +63,43 @@ function fsWrite(key: string, value: unknown): void {
 
 /* ── single JSON documents (settings, admin auth) ── */
 
+const KV = "kv";
+
 export async function kvGet<T>(key: string): Promise<T | null> {
-  if (useSupabase()) {
-    const db = await supabase();
-    const { data, error } = await db
-      .from(TABLE)
-      .select("value")
-      .eq("bucket", KV_BUCKET)
-      .eq("key", key)
-      .maybeSingle();
-    if (error) fail(`get ${key}`, error);
-    return (data?.value as T) ?? null;
+  if (onNetlify()) {
+    const s = await store(KV);
+    return ((await s.get(key, { type: "json" })) as T) ?? null;
   }
   return fsRead<T>(key);
 }
 
 export async function kvSet(key: string, value: unknown): Promise<void> {
-  if (useSupabase()) {
-    const db = await supabase();
-    const { error } = await db
-      .from(TABLE)
-      .upsert({ bucket: KV_BUCKET, key, value }, { onConflict: "bucket,key" });
-    if (error) fail(`set ${key}`, error);
+  if (onNetlify()) {
+    const s = await store(KV);
+    await s.setJSON(key, value);
     return;
   }
   fsWrite(key, value);
 }
 
-/* ── hash maps (orders by id, subscribers by email) ── */
+/* ── hash maps (orders by id, subscribers by email) ──
+   Each hash is its own blob store, so a field is just a key inside it and
+   listing the store is the whole map. */
 
 export async function hashGetAll<T>(hash: string): Promise<Record<string, T>> {
-  if (useSupabase()) {
-    const db = await supabase();
-    const { data, error } = await db
-      .from(TABLE)
-      .select("key,value")
-      .eq("bucket", hash);
-    if (error) fail(`list ${hash}`, error);
+  if (onNetlify()) {
+    const s = await store(hash);
+    const { blobs } = await s.list();
     const map: Record<string, T> = {};
-    for (const row of data ?? []) map[row.key as string] = row.value as T;
+    // Blobs has no bulk read, so fan out — these sets are small (orders,
+    // subscribers), and the alternative is one giant document that would
+    // lose writes whenever two orders land at once.
+    await Promise.all(
+      blobs.map(async (b) => {
+        const v = (await s.get(b.key, { type: "json" })) as T | null;
+        if (v != null) map[b.key] = v;
+      })
+    );
     return map;
   }
   const raw = fsRead<unknown>(hash);
@@ -118,12 +116,9 @@ export async function hashGetAll<T>(hash: string): Promise<Record<string, T>> {
 }
 
 export async function hashSet(hash: string, field: string, value: unknown): Promise<void> {
-  if (useSupabase()) {
-    const db = await supabase();
-    const { error } = await db
-      .from(TABLE)
-      .upsert({ bucket: hash, key: field, value }, { onConflict: "bucket,key" });
-    if (error) fail(`set ${hash}/${field}`, error);
+  if (onNetlify()) {
+    const s = await store(hash);
+    await s.setJSON(field, value);
     return;
   }
   const map = await hashGetAll<unknown>(hash);
@@ -132,14 +127,9 @@ export async function hashSet(hash: string, field: string, value: unknown): Prom
 }
 
 export async function hashDelete(hash: string, field: string): Promise<void> {
-  if (useSupabase()) {
-    const db = await supabase();
-    const { error } = await db
-      .from(TABLE)
-      .delete()
-      .eq("bucket", hash)
-      .eq("key", field);
-    if (error) fail(`delete ${hash}/${field}`, error);
+  if (onNetlify()) {
+    const s = await store(hash);
+    await s.delete(field);
     return;
   }
   const map = await hashGetAll<unknown>(hash);
@@ -148,29 +138,18 @@ export async function hashDelete(hash: string, field: string): Promise<void> {
 }
 
 export async function hashHas(hash: string, field: string): Promise<boolean> {
-  if (useSupabase()) {
-    const db = await supabase();
-    const { count, error } = await db
-      .from(TABLE)
-      .select("key", { count: "exact", head: true })
-      .eq("bucket", hash)
-      .eq("key", field);
-    if (error) fail(`has ${hash}/${field}`, error);
-    return (count ?? 0) > 0;
+  if (onNetlify()) {
+    const s = await store(hash);
+    return (await s.get(field, { type: "json" })) != null;
   }
   const map = await hashGetAll<unknown>(hash);
   return field in map;
 }
 
 export async function hashCount(hash: string): Promise<number> {
-  if (useSupabase()) {
-    const db = await supabase();
-    const { count, error } = await db
-      .from(TABLE)
-      .select("key", { count: "exact", head: true })
-      .eq("bucket", hash);
-    if (error) fail(`count ${hash}`, error);
-    return count ?? 0;
+  if (onNetlify()) {
+    const s = await store(hash);
+    return (await s.list()).blobs.length;
   }
   return Object.keys(await hashGetAll<unknown>(hash)).length;
 }

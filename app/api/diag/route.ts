@@ -39,8 +39,8 @@ export async function GET(req: Request) {
   }
 
   const env = {
-    SUPABASE_URL: !!process.env.SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    NETLIFY: process.env.NETLIFY === "true",
+    store: process.env.NETLIFY === "true" ? "netlify-blobs" : "local-files",
     RESEND_API_KEY: !!process.env.RESEND_API_KEY,
     SMTP_HOST: process.env.SMTP_HOST ?? null,
     SMTP_USER: !!process.env.SMTP_USER,

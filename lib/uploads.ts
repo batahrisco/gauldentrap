@@ -1,15 +1,15 @@
 // Product image uploads from the admin dashboard.
-//  - Supabase Storage bucket "product-images" when configured (Vercel).
+//  - Netlify Blobs store "product-images" in production.
 //  - public/uploads/ locally, so dev works with no cloud setup.
-// Returns a public URL the storefront can render directly.
+// Blobs have no public URL of their own, so uploads are served back through
+// /api/uploads/<name> — see app/api/uploads/[name]/route.ts.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-const BUCKET = "product-images";
+export const UPLOAD_STORE = "product-images";
 
-const useSupabase = () =>
-  !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+const onNetlify = () => process.env.NETLIFY === "true";
 
 const EXT_BY_TYPE: Record<string, string> = {
   "image/jpeg": ".jpg",
@@ -31,22 +31,14 @@ export async function uploadProductImage(file: File): Promise<string> {
   const name = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}${ext}`;
   const bytes = Buffer.from(await file.arrayBuffer());
 
-  if (useSupabase()) {
-    const { createClient } = await import("@supabase/supabase-js");
-    const db = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { auth: { persistSession: false } }
-    );
-    const { error } = await db.storage
-      .from(BUCKET)
-      .upload(name, bytes, { contentType: file.type, upsert: false });
-    if (error) {
-      throw new Error(
-        `Upload failed: ${error.message} — is the public "${BUCKET}" bucket created in Supabase Storage?`
-      );
-    }
-    return db.storage.from(BUCKET).getPublicUrl(name).data.publicUrl;
+  if (onNetlify()) {
+    const { getStore } = await import("@netlify/blobs");
+    const store = getStore({ name: UPLOAD_STORE, consistency: "strong" });
+    // Blobs takes an ArrayBuffer, not a Node Buffer
+    await store.set(name, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, {
+      metadata: { contentType: file.type },
+    });
+    return `/api/uploads/${name}`;
   }
 
   const dir = path.join(process.cwd(), "public", "uploads");
