@@ -1,0 +1,59 @@
+{
+ "whatsapp": "447700900123",
+ "telegram": "gauldentrap",
+ "chatSide": "whatsapp",
+ "livechatEmbed": "<!--Start of Tawk.to Script--><script type=\"text/javascript\">var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();(function(){var s1=document.createElement(\"script\"),s0=document.getElementsByTagName(\"script\")[0];s1.async=true;s1.src='https://embed.tawk.to/6a7e2c3824451e1d49068e29/1jvudpg0r';s1.charset='UTF-8';s1.setAttribute('crossorigin','*');s0.parentNode.insertBefore(s1,s0);})();</script><!--End of Tawk.to Script-->",
+ "notifyEmail": "support@gauldentrap.com",
+ "replyTo": "support@gauldentrap.com",
+ "socials": {
+  "facebook": "",
+  "instagram": "https://instagram.com/gauldentrap",
+  "tiktok": "",
+  "x": "https://x.com/gauldentrap",
+  "youtube": "",
+  "telegram": "",
+  "whatsapp": ""
+ },
+ "payments": {
+  "mode": "manual",
+  "enabled": {
+   "bank": true,
+   "visa": true,
+   "mastercard": true,
+   "amex": true,
+   "discover": false,
+   "paypal": false,
+   "applepay": false,
+   "googlepay": false,
+   "cashapp": true,
+   "zelle": true,
+   "venmo": false,
+   "bitcoin": true,
+   "ethereum": false,
+   "usdt": true,
+   "litecoin": false,
+   "monero": false,
+   "other": false
+  },
+  "methods": {
+   "bank": "",
+   "visa": "",
+   "mastercard": "",
+   "amex": "",
+   "discover": "",
+   "paypal": "",
+   "applepay": "",
+   "googlepay": "",
+   "cashapp": "",
+   "zelle": "",
+   "venmo": "",
+   "bitcoin": "",
+   "ethereum": "",
+   "usdt": "",
+   "litecoin": "",
+   "monero": "",
+   "other": ""
+  },
+  "otherLabel": ""
+ }
+}

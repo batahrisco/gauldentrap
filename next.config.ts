@@ -1,0 +1,49 @@
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // The JSON the app reads at runtime has to ship inside each Netlify
+  // Function bundle. All of it is read through readFileSync(process.cwd() + …),
+  // which the tracer can't follow, so every file is listed by hand — miss one
+  // and that data silently reads as empty in production.
+  outputFileTracingIncludes: {
+    "/**": ["./catalog/products.json", "./data/site-settings.json"],
+  },
+  // Product imagery is content-addressed by slug and never mutated in
+  // place, so it can be cached hard. Without this the CDN revalidates
+  // constantly and every visitor re-downloads the whole image set.
+  async headers() {
+    return [
+      {
+        source: "/:dir(products|sourced)/:file*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, s-maxage=31536000, immutable",
+          },
+        ],
+      },
+    ];
+  },
+  images: {
+    // Every product image is pre-optimised to webp at source time, so we
+    // serve them as plain static files rather than paying for an optimiser.
+    unoptimized: true,
+    remotePatterns: [
+      // optional free CDN mirror of the public GitHub repo, set via
+      // NEXT_PUBLIC_IMAGE_CDN — keeps imagery off Netlify's bandwidth
+      {
+        protocol: "https",
+        hostname: "cdn.jsdelivr.net",
+        pathname: "/gh/**",
+      },
+      // admin-uploaded product images (Supabase Storage)
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
+    ],
+  },
+};
+
+export default nextConfig;

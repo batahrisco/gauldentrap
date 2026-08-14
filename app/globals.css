@@ -1,0 +1,258 @@
+@import "tailwindcss";
+
+/*
+  Gauldentrap — the Meridian dark system, swung from orange to gold.
+  Near-black grounds, warm gold accents, gold glow on interactive surfaces.
+  --verify (cool teal) is the single counterpoint, used only for
+  trust/success/in-stock states: warm gold against cool teal reads far
+  cleaner than the yellow/green pairing it replaced.
+
+  Gold is a light accent, so anything sitting ON it takes --ink (near-black)
+  rather than white — gold/white is about 1.8:1 and unreadable.
+*/
+:root {
+  --background: #080808;
+  --surface: #111111;
+  --surface-2: #191919;
+  --surface-3: #202020;
+  --border: #222222;
+  --border-2: #2e2e2e;
+  --foreground: #f0ece2;
+  --muted: #8d8578;
+  /* Vivid golden yellow — the reference build's orange (#f97316) swapped for
+     a true yellow at the same punch. Change these three and the whole site
+     follows. */
+  --accent: #ffc61a;
+  --accent-2: #e8ad00;
+  --accent-3: #b88600;
+  --ochre: #d19a00;
+  --verify: #2dd4bf;
+  --earth: #050505;
+  --ink: #1a1400;
+  --glow: rgba(255, 198, 26, 0.22);
+  --dim: rgba(255, 198, 26, 0.1);
+
+  /* Aliases for the reference build's variable names. The ported policy
+     pages (content/pages.json) carry their original inline styles, which
+     reference these — mapping them here keeps that markup verbatim instead
+     of hand-restyling eight pages. */
+  --bg: var(--background);
+  --bg2: var(--surface);
+  --bg3: var(--surface-2);
+  --bg4: var(--surface-3);
+  --br: var(--border);
+  --br2: var(--border-2);
+  --ac: var(--accent);
+  --ac2: var(--accent-2);
+  --tx: var(--foreground);
+  --tx2: var(--muted);
+  --tx3: #4a463d;
+  --r: 10px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-2: var(--border-2);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-ochre: var(--ochre);
+  --color-verify: var(--verify);
+  --color-earth: var(--earth);
+  --color-ink: var(--ink);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-bebas);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-size: 15px;
+}
+
+.font-display {
+  font-family: var(--font-bebas), sans-serif;
+  letter-spacing: 0.04em;
+}
+
+/* Thin dark scrollbar, as on the reference build */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--background); }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+
+/* Announcement ticker — molten-gold band */
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.ticker-row {
+  display: inline-flex;
+  gap: 56px;
+  animation: ticker 40s linear infinite;
+  white-space: nowrap;
+}
+@keyframes gold-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.announce {
+  background: linear-gradient(90deg, #4a3600, #9c7400, #ffc61a, #9c7400, #4a3600);
+  background-size: 300% 100%;
+  animation: gold-shift 8s ease infinite;
+  color: #241a00;
+  font-weight: 600;
+}
+
+/* ── Gold accents replacing the old dot-work motifs ── */
+
+.dot-row {
+  height: 2px;
+  width: 128px;
+  background: linear-gradient(90deg, var(--accent), var(--ochre) 55%, transparent);
+  opacity: 0.75;
+  border-radius: 2px;
+}
+
+.dot-field {
+  background-image:
+    radial-gradient(circle 1.8px at 12% 25%, rgba(255, 198, 26, 0.16) 1.7px, transparent 1.9px),
+    radial-gradient(circle 1.4px at 68% 60%, rgba(255, 198, 26, 0.12) 1.3px, transparent 1.5px),
+    radial-gradient(circle 2px at 38% 82%, rgba(209, 154, 0, 0.14) 1.9px, transparent 2.1px),
+    radial-gradient(circle 1.5px at 88% 18%, rgba(255, 198, 26, 0.12) 1.4px, transparent 1.6px);
+  background-size: 220px 180px;
+}
+
+.art-rings {
+  border-radius: 9999px;
+  background: repeating-radial-gradient(
+    circle at center,
+    rgba(255, 198, 26, 0.28) 0 2px,
+    transparent 2px 14px,
+    rgba(209, 154, 0, 0.2) 14px 16px,
+    transparent 16px 28px
+  );
+  -webkit-mask-image: radial-gradient(circle, black 30%, transparent 72%);
+  mask-image: radial-gradient(circle, black 30%, transparent 72%);
+}
+
+/* Gold glow, the signature of the dark build */
+.glow-accent { box-shadow: 0 0 24px var(--glow); }
+.glow-img { filter: drop-shadow(0 0 42px var(--glow)) drop-shadow(0 18px 34px rgba(0, 0, 0, 0.7)); }
+
+/* Floating messenger bubble — pulse colour is set inline per messenger */
+@keyframes chat-pulse {
+  0% { box-shadow: 0 0 0 0 var(--chat-pulse, rgba(37, 211, 102, 0.45)); }
+  70% { box-shadow: 0 0 0 14px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.chat-float { animation: chat-pulse 2.2s infinite; }
+
+/* ── Ported policy/info pages ──
+   The markup keeps its original inline styles for layout; these rules
+   supply the base typography those pages relied on the reference build's
+   stylesheet for. */
+.static-page {
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 0 24px 72px;
+}
+.static-page h1 {
+  font-family: var(--font-bebas), sans-serif;
+  font-size: clamp(30px, 5vw, 52px);
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+  margin: 0 0 12px;
+}
+.static-page h2 {
+  font-family: var(--font-bebas), sans-serif;
+  font-size: clamp(24px, 3.2vw, 38px);
+  letter-spacing: 0.04em;
+  margin: 36px 0 14px;
+}
+.static-page h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 24px 0 8px;
+}
+.static-page h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 18px 0 6px;
+}
+.static-page p,
+.static-page li {
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--muted);
+}
+.static-page p { margin: 10px 0; }
+.static-page ul,
+.static-page ol {
+  margin: 10px 0 10px 1.25rem;
+  list-style: disc;
+}
+.static-page li { margin: 6px 0; }
+.static-page a { color: var(--accent); }
+.static-page a:hover { text-decoration: underline; }
+.static-page strong { color: var(--foreground); }
+.static-page table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 13.5px;
+}
+.static-page td,
+.static-page th {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  color: var(--muted);
+  text-align: left;
+}
+.static-page th { color: var(--foreground); }
+/* Wide ported tables scroll rather than pushing the page sideways */
+.static-page > div { max-width: 100%; overflow-x: auto; }
+
+/* Product description prose (scraped HTML has h2/p/ul structure) */
+.desc h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 1.4rem 0 0.5rem;
+}
+.desc p {
+  margin: 0.5rem 0;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.desc ul,
+.desc ol {
+  margin: 0.5rem 0 0.5rem 1.25rem;
+  list-style: disc;
+  color: var(--muted);
+}
+.desc li {
+  margin: 0.25rem 0;
+  line-height: 1.6;
+}
+.desc strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.desc table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+.desc td,
+.desc th {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  color: var(--muted);
+}

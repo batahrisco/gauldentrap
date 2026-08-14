@@ -1,0 +1,150 @@
+import { NextResponse } from "next/server";
+import { addOrder, newOrderId, type Order, type OrderItem } from "@/lib/orders";
+import { getSettings } from "@/lib/settings";
+import {
+  orderCustomerHtml,
+  orderOwnerHtml,
+  ownerAddress,
+  replyToAddress,
+  sendMail,
+} from "@/lib/email";
+import { getProducts } from "@/lib/catalog";
+import { discountFor, WELCOME_CODE } from "@/lib/discount";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export async function POST(req: Request) {
+  // Anything thrown in here previously became a bare 500 with an empty body,
+  // which crashed the checkout form on res.json() and told nobody why.
+  try {
+    return await handleOrder(req);
+  } catch (e) {
+    const msg = String((e as Error)?.stack ?? (e as Error)?.message ?? e);
+    console.error("[orders] unhandled:", msg);
+    return NextResponse.json(
+      { error: "server_error", detail: msg.slice(0, 500) },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleOrder(req: Request) {
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  }
+
+  const c = (body.customer ?? {}) as Record<string, string>;
+  const required = [
+    "name", "email", "phone", "address", "suburb", "state", "postcode", "country",
+  ];
+  for (const f of required) {
+    if (!c[f] || String(c[f]).trim().length < 2) {
+      return NextResponse.json({ error: `Missing ${f}` }, { status: 400 });
+    }
+  }
+  if (!EMAIL_RE.test(c.email)) {
+    return NextResponse.json({ error: "Invalid email" }, { status: 400 });
+  }
+
+  const rawItems = Array.isArray(body.items) ? (body.items as OrderItem[]) : [];
+  if (rawItems.length === 0 || rawItems.length > 100) {
+    return NextResponse.json({ error: "Cart is empty" }, { status: 400 });
+  }
+  // Re-price server-side — never trust client prices
+  const catalog = new Map((await getProducts()).map((p) => [p.id, p]));
+  const items: OrderItem[] = [];
+  for (const it of rawItems) {
+    const p = catalog.get(Number(it.id));
+    const qty = Math.min(Math.max(1, Number(it.qty) || 1), 50);
+    if (!p) continue;
+    // Variant price comes from the catalog too, never from the client — a
+    // posted "3.5g" must be charged at the 3.5g price this server knows.
+    const wanted = it.variant ? String(it.variant) : null;
+    const variant = wanted
+      ? p.variants.find((v) => v.label === wanted)
+      : undefined;
+    if (wanted && !variant) continue; // unknown option — drop the line
+    items.push({
+      id: p.id,
+      slug: p.slug,
+      name: variant ? `${p.name} (${variant.label})` : p.name,
+      price: variant ? variant.price : (p.price ?? 0),
+      variant: variant?.label ?? null,
+      qty,
+    });
+  }
+  if (items.length === 0) {
+    return NextResponse.json({ error: "No valid items" }, { status: 400 });
+  }
+
+  const settings = await getSettings();
+  const method = String(body.paymentMethod ?? "bank");
+  const subtotal = items.reduce((n, i) => n + i.price * i.qty, 0);
+  const discount = discountFor(String(body.discountCode ?? ""), subtotal);
+  const order: Order = {
+    id: newOrderId(),
+    createdAt: new Date().toISOString(),
+    status: settings.payments.mode === "direct" ? "awaiting-payment" : "new",
+    paymentMode: settings.payments.mode,
+    paymentMethod: method,
+    paymentOther: body.paymentOther ? String(body.paymentOther).slice(0, 120) : undefined,
+    paymentReference: body.paymentReference
+      ? String(body.paymentReference).slice(0, 120)
+      : undefined,
+    customer: {
+      name: String(c.name).slice(0, 120),
+      email: String(c.email).slice(0, 160),
+      phone: String(c.phone).slice(0, 40),
+      address: String(c.address).slice(0, 200),
+      suburb: String(c.suburb).slice(0, 80),
+      // free text and generously sized — the store ships worldwide, and
+      // "Provincia de Buenos Aires" / "SW1A 2AA" both blow a 40/10 cap
+      state: String(c.state).slice(0, 80),
+      postcode: String(c.postcode).slice(0, 20),
+      country: String(c.country).slice(0, 80),
+      notes: c.notes ? String(c.notes).slice(0, 500) : undefined,
+    },
+    items,
+    subtotal,
+    discountCode: discount > 0 ? WELCOME_CODE : undefined,
+    discount: discount > 0 ? discount : undefined,
+    total: Math.round((subtotal - discount) * 100) / 100,
+  };
+
+  try {
+    await addOrder(order);
+  } catch (e) {
+    // Never swallow this — an order we can't persist must not look like a
+    // success to the customer. Log loudly, tell the client plainly.
+    const msg = String((e as Error)?.message ?? e);
+    console.error("[orders] could not save order", order.id, msg);
+    return NextResponse.json(
+      { error: "storage_unavailable", detail: msg.slice(0, 300) },
+      { status: 503 }
+    );
+  }
+
+  // Awaited, not fire-and-forget: serverless freezes the function once the
+  // response is sent, so detached sends never actually run. sendMail is
+  // capped and never throws, so this cannot fail or hang the order.
+  await Promise.allSettled([
+    sendMail({
+      to: order.customer.email,
+      subject: `Your Gauldentrap order ${order.id}`,
+      html: orderCustomerHtml(order, settings),
+      replyTo: replyToAddress(settings),
+    }),
+    sendMail({
+      to: ownerAddress(settings),
+      subject: `New order ${order.id} — $${(order.total ?? order.subtotal).toFixed(2)} (${order.paymentMode})`,
+      html: orderOwnerHtml(order),
+      // so the owner can hit reply and land in the customer's inbox
+      replyTo: order.customer.email,
+    }),
+  ]);
+
+  return NextResponse.json({ ok: true, orderId: order.id });
+}
