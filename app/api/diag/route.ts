@@ -1,76 +1,96 @@
 import { NextResponse } from "next/server";
-import { kvGet } from "@/lib/storage";
+import { storageSelfTest, storeError } from "@/lib/storage";
+import { uploadStore } from "@/lib/uploads";
+import { getSettings } from "@/lib/settings";
+import { ownerAddress, replyToAddress } from "@/lib/email";
 
 // Diagnostics for production issues that can't be reproduced locally
-// (blocked ports, missing env vars, read-only filesystem).
-// Gated behind the admin password: /api/diag?key=<ADMIN_PASSWORD>
+// (missing blob context, read-only filesystem, blocked mail).
+//   /api/diag?key=<ADMIN_PASSWORD>          — checks everything, sends nothing
+//   /api/diag?key=<ADMIN_PASSWORD>&mail=1   — also sends one test email
 export const dynamic = "force-dynamic";
 
-async function trySmtp(port: number, secure: boolean) {
-  const started = Date.now();
-  try {
-    const nodemailer = (await import("nodemailer")).default;
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port,
-      secure,
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-      connectionTimeout: 6000,
-      greetingTimeout: 6000,
-      socketTimeout: 6000,
-    });
-    await transporter.verify();
-    return { port, secure, ok: true, ms: Date.now() - started };
-  } catch (e) {
-    return {
-      port,
-      secure,
-      ok: false,
-      ms: Date.now() - started,
-      error: String((e as Error)?.message ?? e).slice(0, 200),
-    };
-  }
-}
-
 export async function GET(req: Request) {
-  const key = new URL(req.url).searchParams.get("key");
+  const url = new URL(req.url);
+  const key = url.searchParams.get("key");
   if (!process.env.ADMIN_PASSWORD || key !== process.env.ADMIN_PASSWORD) {
     return new NextResponse("Not found", { status: 404 });
   }
 
   const env = {
-    NETLIFY: process.env.NETLIFY === "true",
-    store: process.env.NETLIFY === "true" ? "netlify-blobs" : "local-files",
+    NODE_ENV: process.env.NODE_ENV,
+    // present during builds, not guaranteed at function runtime — which is
+    // exactly why storage no longer keys off it
+    NETLIFY: process.env.NETLIFY ?? null,
+    NETLIFY_SITE_ID: !!process.env.NETLIFY_SITE_ID,
+    NETLIFY_API_TOKEN: !!process.env.NETLIFY_API_TOKEN,
+    NETLIFY_BLOBS_CONTEXT: !!process.env.NETLIFY_BLOBS_CONTEXT,
     RESEND_API_KEY: !!process.env.RESEND_API_KEY,
+    MAIL_FROM: process.env.MAIL_FROM ?? null,
+    MAIL_OWNER: process.env.MAIL_OWNER ?? null,
     SMTP_HOST: process.env.SMTP_HOST ?? null,
-    SMTP_USER: !!process.env.SMTP_USER,
-    SMTP_PASS: !!process.env.SMTP_PASS,
-    NEXT_PUBLIC_IMAGE_CDN: process.env.NEXT_PUBLIC_IMAGE_CDN ?? null,
   };
 
-  // Can we reach the database at all?
-  let storage: unknown;
+  // Round-trips a real write — a read alone silently falls back and lies.
+  const storage = await storageSelfTest();
+  const blobs = { getStoreError: storeError() };
+
+  let uploads: unknown;
   try {
-    await kvGet("site-settings");
-    storage = { ok: true };
+    const s = await uploadStore();
+    uploads = { ok: !!s, store: s ? "netlify-blobs" : "unavailable" };
   } catch (e) {
-    storage = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 250) };
+    uploads = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 250) };
   }
 
-  // Which SMTP ports actually work from this host?
-  const smtp = process.env.SMTP_HOST
-    ? await Promise.all([trySmtp(465, true), trySmtp(587, false), trySmtp(2525, false)])
-    : "SMTP_HOST not set";
-
-  // Plain outbound HTTPS, as a control
-  let https: unknown;
+  // Where mail would actually go, after the admin panel overrides
+  let mailTargets: unknown;
   try {
-    const t = Date.now();
-    const r = await fetch("https://api.resend.com/", { signal: AbortSignal.timeout(6000) });
-    https = { ok: true, status: r.status, ms: Date.now() - t };
+    const s = await getSettings();
+    mailTargets = { owner: ownerAddress(s), replyTo: replyToAddress(s) };
   } catch (e) {
-    https = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 150) };
+    mailTargets = { error: String((e as Error)?.message ?? e).slice(0, 200) };
   }
 
-  return NextResponse.json({ env, storage, smtp, https }, { status: 200 });
+  // Ask Resend directly whether the key is valid and the domain verified
+  let resend: unknown = "RESEND_API_KEY not set";
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const r = await fetch("https://api.resend.com/domains", {
+        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      const body = (await r.json().catch(() => null)) as {
+        data?: { name: string; status: string }[];
+        challenge?: unknown;
+      } | null;
+      resend = {
+        status: r.status,
+        keyValid: r.status !== 401 && r.status !== 403,
+        domains:
+          body?.data?.map((d) => ({ name: d.name, status: d.status })) ?? null,
+      };
+    } catch (e) {
+      resend = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) };
+    }
+  }
+
+  // Optional: actually send one, so "it didn't arrive" can be pinned down
+  let testMail: unknown = "skipped (add &mail=1 to send)";
+  if (url.searchParams.get("mail") === "1") {
+    const { sendMail } = await import("@/lib/email");
+    const settings = await getSettings().catch(() => null);
+    const to = ownerAddress(settings ?? undefined);
+    const ok = await sendMail({
+      to,
+      subject: "Gauldentrap diagnostics test",
+      html: "<p>If you're reading this, Resend delivery works.</p>",
+    });
+    testMail = { to, delivered: ok, note: ok ? undefined : "see function logs for the reason" };
+  }
+
+  return NextResponse.json(
+    { env, storage, blobs, uploads, mailTargets, resend, testMail },
+    { status: 200 }
+  );
 }

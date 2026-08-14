@@ -1,4 +1,4 @@
-import { UPLOAD_STORE } from "@/lib/uploads";
+import { uploadStore } from "@/lib/uploads";
 
 /**
  * Serves admin-uploaded product images out of Netlify Blobs. Blobs have no
@@ -18,8 +18,8 @@ export async function GET(
   }
 
   try {
-    const { getStore } = await import("@netlify/blobs");
-    const store = getStore({ name: UPLOAD_STORE, consistency: "strong" });
+    const store = await uploadStore();
+    if (!store) return new Response("Not found", { status: 404 });
     const blob = await store.getWithMetadata(name, { type: "arrayBuffer" });
     if (!blob) return new Response("Not found", { status: 404 });
 

@@ -9,7 +9,24 @@ import path from "node:path";
 
 export const UPLOAD_STORE = "product-images";
 
-const onNetlify = () => process.env.NETLIFY === "true";
+/**
+ * Same reasoning as lib/storage.ts: don't gate on process.env.NETLIFY, which
+ * isn't guaranteed at function runtime. Ask for the store and see.
+ */
+export async function uploadStore() {
+  try {
+    const { getStore } = await import("@netlify/blobs");
+    const siteID = process.env.NETLIFY_SITE_ID;
+    const token = process.env.NETLIFY_API_TOKEN;
+    return getStore(
+      siteID && token
+        ? { name: UPLOAD_STORE, consistency: "strong", siteID, token }
+        : { name: UPLOAD_STORE, consistency: "strong" }
+    );
+  } catch {
+    return null;
+  }
+}
 
 const EXT_BY_TYPE: Record<string, string> = {
   "image/jpeg": ".jpg",
@@ -31,14 +48,23 @@ export async function uploadProductImage(file: File): Promise<string> {
   const name = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}${ext}`;
   const bytes = Buffer.from(await file.arrayBuffer());
 
-  if (onNetlify()) {
-    const { getStore } = await import("@netlify/blobs");
-    const store = getStore({ name: UPLOAD_STORE, consistency: "strong" });
+  const store = await uploadStore();
+  if (store) {
     // Blobs takes an ArrayBuffer, not a Node Buffer
-    await store.set(name, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, {
-      metadata: { contentType: file.type },
-    });
+    await store.set(
+      name,
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+      { metadata: { contentType: file.type } }
+    );
     return `/api/uploads/${name}`;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Image upload failed: Netlify Blobs is unavailable, and this host has " +
+        "a read-only filesystem. Set NETLIFY_SITE_ID and NETLIFY_API_TOKEN " +
+        "if automatic blob context isn't provided."
+    );
   }
 
   const dir = path.join(process.cwd(), "public", "uploads");
