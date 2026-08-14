@@ -64,9 +64,14 @@ export async function GET(req: Request) {
         data?: { name: string; status: string }[];
         challenge?: unknown;
       } | null;
+      // A sending-only key 401s here but sends fine, so this is NOT a
+      // verdict on the key — use &mail=1 for that.
       resend = {
-        status: r.status,
-        keyValid: r.status !== 401 && r.status !== 403,
+        domainsEndpoint: r.status,
+        note:
+          r.status === 401
+            ? "401 on /domains is expected for a sending-only key; check testMail instead"
+            : undefined,
         domains:
           body?.data?.map((d) => ({ name: d.name, status: d.status })) ?? null,
       };

@@ -4,6 +4,11 @@
 // category listings and cart support exactly like built-in products.
 
 import { hashDelete, hashGetAll, hashSet } from "@/lib/storage";
+
+// Pure field config lives in its own module so client components can import
+// it without dragging node:fs into the browser bundle.
+export * from "@/lib/product-fields";
+import { slugify } from "@/lib/product-fields";
 import type { GroupKey } from "@/lib/catalog";
 
 export type CustomProduct = {
@@ -18,23 +23,22 @@ export type CustomProduct = {
   descriptionHtml: string;
   images: { src: string; alt: string; width: number; height: number }[];
   in_stock: boolean;
+  /** Weight/size options — flower, hash, shrooms, concentrates, wholesale */
+  variants?: { label: string; price: number }[];
+  /** Indica / Sativa / Hybrid — cannabis ranges only */
+  strain?: string | null;
+  /** AA…AAAA+ — flower and wholesale */
+  grade?: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
 
 const HASH = "custom-products";
 
 // Custom product ids live above the scraped catalog's range (max ~11k)
 const ID_BASE = 900_000;
 
-export function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 90);
-}
 
 export async function getCustomProducts(): Promise<CustomProduct[]> {
   const map = await hashGetAll<CustomProduct>(HASH);
@@ -76,6 +80,9 @@ export async function saveCustomProduct(
     descriptionHtml: input.descriptionHtml,
     images: input.images,
     in_stock: input.in_stock,
+    variants: input.variants ?? [],
+    strain: input.strain ?? null,
+    grade: input.grade ?? null,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };

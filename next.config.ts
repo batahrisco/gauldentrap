@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Server Actions default to a 1MB body, which silently killed the admin
+    // product form the moment a real photo was attached. Images are already
+    // downscaled client-side (components/admin/ImagePicker.tsx); this is the
+    // headroom for a few of them at once, and stays under Netlify Functions'
+    // own ~6MB request cap.
+    serverActions: { bodySizeLimit: "5mb" },
+  },
   // The JSON the app reads at runtime has to ship inside each Netlify
   // Function bundle. All of it is read through readFileSync(process.cwd() + …),
   // which the tracer can't follow, so every file is listed by hand — miss one

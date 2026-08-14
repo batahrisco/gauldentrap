@@ -3,8 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/admin";
 import { getCustomProduct } from "@/lib/products-custom";
-import { GROUPS } from "@/lib/catalog";
 import { saveProductAction } from "@/app/admin/products/actions";
+import ProductFields from "@/components/admin/ProductFields";
+import ImagePicker from "@/components/admin/ImagePicker";
 
 const input =
   "w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-sm outline-none transition placeholder:text-muted/60 focus:border-accent";
@@ -12,7 +13,7 @@ const input =
 const ERRORS: Record<string, string> = {
   required: "Name and a price above 0 are required.",
   image: "Add at least one product image.",
-  upload: "Image upload failed — check the file type/size (max 6MB).",
+  upload: "Image upload failed — see the note under the file picker.",
 };
 
 // One form for both create and edit — /admin/products/new or /admin/products/<id>
@@ -99,20 +100,12 @@ export default async function AdminProductFormPage({
                 className={`${input} mt-1.5`}
               />
             </label>
-            <label className="text-sm">
-              <span className="font-semibold">Category *</span>
-              <select
-                name="group"
-                defaultValue={product?.group ?? "disposables"}
-                className={`${input} mt-1.5`}
-              >
-                {GROUPS.map((g) => (
-                  <option key={g.key} value={g.key}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <ProductFields
+              defaultGroup={product?.group ?? "flower"}
+              defaultStrain={product?.strain ?? ""}
+              defaultGrade={product?.grade ?? ""}
+              defaultVariants={product?.variants ?? []}
+            />
             <label className="text-sm">
               <span className="font-semibold">Brand</span>
               <input
@@ -199,13 +192,9 @@ export default async function AdminProductFormPage({
             </div>
           )}
 
-          <input
-            type="file"
-            name="images"
-            accept="image/jpeg,image/png,image/webp,image/avif"
-            multiple
-            className={`${input} mt-4 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-ink`}
-          />
+          <div className="mt-4">
+            <ImagePicker />
+          </div>
         </section>
 
         <div className="flex items-center gap-3">

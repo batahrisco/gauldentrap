@@ -36,7 +36,9 @@ const EXT_BY_TYPE: Record<string, string> = {
   "image/gif": ".gif",
 };
 
-export const MAX_UPLOAD_BYTES = 6 * 1024 * 1024;
+// Kept under the Server Action body limit (see next.config.ts); the picker
+// downscales before upload, so this is a backstop, not the normal path.
+export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export async function uploadProductImage(file: File): Promise<string> {
   const ext = EXT_BY_TYPE[file.type];

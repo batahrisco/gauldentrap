@@ -8,6 +8,7 @@ import {
   getCustomProduct,
   saveCustomProduct,
 } from "@/lib/products-custom";
+import { fieldsFor } from "@/lib/product-fields";
 import { imageDimensions, uploadProductImage } from "@/lib/uploads";
 import type { GroupKey } from "@/lib/catalog";
 
@@ -70,10 +71,21 @@ export async function saveProductAction(formData: FormData) {
     ? (str("group") as GroupKey)
     : "flower";
 
+  // Size rows arrive as parallel arrays; keep only complete, priced pairs
+  const labels = formData.getAll("variantLabel").map((v) => String(v).trim());
+  const prices = formData.getAll("variantPrice").map((v) => Number(String(v)));
+  const variants = labels
+    .map((label, i) => ({ label, price: prices[i] }))
+    .filter((v) => v.label && Number.isFinite(v.price) && v.price > 0);
+
+  const f = fieldsFor(group);
+
   await saveCustomProduct({
     id,
     name,
-    price,
+    // With sizes, the headline price is the cheapest option — otherwise the
+    // card and the buy box would disagree.
+    price: variants.length ? Math.min(...variants.map((v) => v.price)) : price,
     regular_price: Number.isFinite(regular as number) && regular ? regular : null,
     group,
     brand: str("brand"),
@@ -81,6 +93,11 @@ export async function saveProductAction(formData: FormData) {
     descriptionHtml: toHtml(str("description")),
     images: finalImages,
     in_stock: str("in_stock") === "on",
+    // ignore anything the category doesn't use, so switching category can't
+    // leave a stale strain or set of weights behind
+    variants: f.variants ? variants : [],
+    strain: f.strain ? str("strain") || null : null,
+    grade: f.grade ? str("grade") || null : null,
   });
 
   revalidatePath("/", "layout");
