@@ -50,9 +50,45 @@ export type Order = {
 
 const HASH = "orders";
 
+/**
+ * Defensive on purpose: one malformed record used to throw from the sort
+ * (`b.createdAt.localeCompare` on an undefined) and take down every page
+ * that reads orders. A bad record must never hide the good ones.
+ */
 export async function readOrders(): Promise<Order[]> {
   const map = await hashGetAll<Order>(HASH);
-  return Object.values(map).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return Object.values(map)
+    .filter(
+      (o): o is Order =>
+        !!o &&
+        typeof o === "object" &&
+        typeof o.id === "string" &&
+        // the admin table dereferences both of these directly
+        !!o.customer &&
+        Array.isArray(o.items)
+    )
+    .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
+}
+
+/** Order records that would break the dashboard — reported by /api/diag. */
+export async function inspectOrders(): Promise<{
+  total: number;
+  usable: number;
+  problems: { key: string; missing: string[] }[];
+}> {
+  const map = await hashGetAll<Record<string, unknown>>(HASH);
+  const required = ["id", "createdAt", "status", "customer", "items", "subtotal"];
+  const problems: { key: string; missing: string[] }[] = [];
+  for (const [key, value] of Object.entries(map)) {
+    if (!value || typeof value !== "object") {
+      problems.push({ key, missing: ["(not an object)"] });
+      continue;
+    }
+    const missing = required.filter((f) => (value as Record<string, unknown>)[f] == null);
+    if (missing.length) problems.push({ key, missing });
+  }
+  const total = Object.keys(map).length;
+  return { total, usable: total - problems.length, problems };
 }
 
 export async function addOrder(order: Order): Promise<void> {

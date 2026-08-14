@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { storageSelfTest, storeError } from "@/lib/storage";
+import { inspectOrders } from "@/lib/orders";
 import { uploadStore } from "@/lib/uploads";
 import { getSettings } from "@/lib/settings";
 import { ownerAddress, replyToAddress } from "@/lib/email";
@@ -34,6 +35,14 @@ export async function GET(req: Request) {
   // Round-trips a real write — a read alone silently falls back and lies.
   const storage = await storageSelfTest();
   const blobs = { getStoreError: storeError() };
+
+  // Field names only — no customer data leaves the box
+  let orders: unknown;
+  try {
+    orders = await inspectOrders();
+  } catch (e) {
+    orders = { error: String((e as Error)?.message ?? e).slice(0, 250) };
+  }
 
   let uploads: unknown;
   try {
@@ -95,7 +104,7 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json(
-    { env, storage, blobs, uploads, mailTargets, resend, testMail },
+    { env, storage, blobs, orders, uploads, mailTargets, resend, testMail },
     { status: 200 }
   );
 }
