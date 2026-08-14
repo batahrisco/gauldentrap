@@ -106,7 +106,17 @@ export async function kvSet(key: string, value: unknown): Promise<void> {
 export async function hashGetAll<T>(hash: string): Promise<Record<string, T>> {
   const s = await store(hash);
   if (s) {
-    const { blobs } = await s.list();
+    // A failure here must not take the admin dashboard down with a 500 —
+    // record it and return empty, and the UI warns that the list may be
+    // incomplete rather than quietly implying there are no orders.
+    let blobs: { key: string }[];
+    try {
+      ({ blobs } = await s.list());
+    } catch (e) {
+      lastStoreError = `list(${hash}) failed: ${String((e as Error)?.message ?? e).slice(0, 200)}`;
+      console.error("[storage]", lastStoreError);
+      return {};
+    }
     const map: Record<string, T> = {};
     // Blobs has no bulk read, so fan out — these sets are small (orders,
     // subscribers), and the alternative is one giant document that would
@@ -157,7 +167,15 @@ export async function hashHas(hash: string, field: string): Promise<boolean> {
 
 export async function hashCount(hash: string): Promise<number> {
   const s = await store(hash);
-  if (s) return (await s.list()).blobs.length;
+  if (s) {
+    try {
+      return (await s.list()).blobs.length;
+    } catch (e) {
+      lastStoreError = `list(${hash}) failed: ${String((e as Error)?.message ?? e).slice(0, 200)}`;
+      console.error("[storage]", lastStoreError);
+      return 0;
+    }
+  }
   return Object.keys(await hashGetAll<unknown>(hash)).length;
 }
 
@@ -165,6 +183,7 @@ export async function hashCount(hash: string): Promise<number> {
 export async function storageSelfTest(): Promise<{
   driver: string;
   ok: boolean;
+  lists?: Record<string, string>;
   error?: string;
 }> {
   const s = await store(KV);
@@ -177,12 +196,29 @@ export async function storageSelfTest(): Promise<{
     if (back?.at !== stamp.at) {
       return { driver, ok: false, error: "wrote a value but read back something else" };
     }
-    return { driver, ok: true };
   } catch (e) {
     return {
       driver,
       ok: false,
-      error: String((e as Error)?.message ?? e).slice(0, 300),
+      error: `get/set: ${String((e as Error)?.message ?? e).slice(0, 250)}`,
     };
   }
+
+  // list() is a separate code path from get/set, and it's what the admin
+  // dashboard runs — testing only get/set is how a broken list slipped past.
+  const lists: Record<string, string> = {};
+  for (const name of ["orders", "subscribers", "custom-products"]) {
+    const h = await store(name);
+    if (!h) {
+      lists[name] = "no store";
+      continue;
+    }
+    try {
+      lists[name] = `ok (${(await h.list()).blobs.length})`;
+    } catch (e) {
+      lists[name] = `FAILED: ${String((e as Error)?.message ?? e).slice(0, 200)}`;
+    }
+  }
+  const broken = Object.values(lists).some((v) => v.startsWith("FAILED"));
+  return { driver, ok: !broken, lists, error: broken ? "list() failing — see lists" : undefined };
 }

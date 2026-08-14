@@ -2,14 +2,17 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/admin";
 import { readOrders } from "@/lib/orders";
 import { getSettings } from "@/lib/settings";
-import { hashCount } from "@/lib/storage";
+import { hashCount, storeError } from "@/lib/storage";
 
 export default async function AdminDashboard() {
   await requireAdmin();
-  const orders = await readOrders();
+  // Every one of these hits storage. A single failure used to 500 the whole
+  // dashboard; now it degrades and the banner below says so.
+  const orders = await readOrders().catch(() => []);
   const settings = await getSettings();
-  const subscribers = await hashCount("subscribers");
-  const customProducts = await hashCount("custom-products");
+  const subscribers = await hashCount("subscribers").catch(() => 0);
+  const customProducts = await hashCount("custom-products").catch(() => 0);
+  const storageWarning = storeError();
   const newOrders = orders.filter((o) => o.status === "new" || o.status === "awaiting-payment");
   const revenue = orders
     .filter((o) => o.status === "paid" || o.status === "shipped")
@@ -26,6 +29,20 @@ export default async function AdminDashboard() {
   return (
     <div>
       <h1 className="font-display text-3xl">Dashboard</h1>
+
+      {storageWarning && (
+        <div className="mt-4 rounded-xl border border-accent/40 bg-accent/10 p-4 text-sm">
+          <p className="font-bold text-accent">Storage problem — figures below may be incomplete</p>
+          <p className="mt-1.5 font-mono text-[12px] leading-relaxed text-muted">
+            {storageWarning}
+          </p>
+          <p className="mt-2 text-xs text-muted">
+            Run <code>/api/diag?key=…</code> for the full picture. Orders are
+            still being written; this affects reading them back.
+          </p>
+        </div>
+      )}
+
       <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {cards.map((c) => (
           <Link
