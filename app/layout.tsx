@@ -35,7 +35,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: "Gauldentrap",
-    images: ["/og_image.jpg"],
+    // the image comes from app/opengraph-image.tsx
   },
 };
 
