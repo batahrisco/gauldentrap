@@ -14,7 +14,9 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:dir(products|sourced)/:file*",
+        // every image directory, or the uncovered ones revalidate on each
+        // visit — /images alone is 201MB of product photography
+        source: "/:dir(images|hero_images|products|sourced)/:file*",
         headers: [
           {
             key: "Cache-Control",
