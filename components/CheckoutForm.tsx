@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useCart } from "@/lib/cart";
 import { formatPrice } from "@/lib/format";
 import Medallion from "@/components/Medallion";
+import SpamNote from "@/components/SpamNote";
 import type { PaymentMethodKey } from "@/lib/settings";
 import { DISCOUNT_STORAGE_KEY, discountFor } from "@/lib/discount";
 
@@ -113,6 +114,9 @@ export default function CheckoutForm({
             ? "Our team will email you shortly with payment details to complete your order."
             : "Complete your payment using the details shown (also in your email), quoting your order number as the reference."}
         </p>
+        {/* The owner's replies are the ones landing in spam, so this matters
+            most in manual mode where payment details arrive by email. */}
+        <SpamNote variant="reply" className="mx-auto mt-6 max-w-md" />
         <Link
           href="/shop"
           className="glow-accent mt-8 inline-block rounded-lg bg-accent px-7 py-3 text-sm font-bold text-ink transition hover:bg-accent-2"

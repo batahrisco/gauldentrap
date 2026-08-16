@@ -139,6 +139,26 @@ const usd = (n: number) => `$${n.toFixed(2)}`;
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 
+/**
+ * These automated messages reach the inbox (Resend signs them for the
+ * domain), but the owner's replies from support@ are landing in spam. This
+ * message rides along on the mail that DOES arrive, telling people where to
+ * look for the one that follows — and asking them to train the filter, which
+ * is what actually fixes it for that recipient.
+ */
+function spamNote(replyTo: string): string {
+  return `<div style="background:#fff8e1;border-left:3px solid #ffc61a;border-radius:8px;padding:14px 16px;margin:18px 0;">
+    <p style="margin:0 0 6px;font-size:13.5px;font-weight:800;">📩 Our reply may land in spam</p>
+    <p style="margin:0;font-size:13px;line-height:1.7;">
+      We'll be in touch shortly from <b>${esc(replyTo)}</b>. That message can
+      land in <b>spam</b> or <b>promotions</b> — please check there if it isn't
+      in your inbox within a few minutes, and mark it
+      <b>&ldquo;Not spam&rdquo;</b> so it reaches you properly next time.
+      Adding the address to your contacts helps too.
+    </p>
+  </div>`;
+}
+
 function shell(title: string, body: string): string {
   return `<!doctype html><html><body style="margin:0;padding:0;background:#0f0f0f;font-family:Arial,Helvetica,sans-serif;color:#241f14;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f0f;padding:24px 12px;"><tr><td align="center">
@@ -215,6 +235,7 @@ export function orderCustomerHtml(order: Order, settings: SiteSettings): string 
     `<p style="font-size:14px;">Hi ${esc(order.customer.name.split(" ")[0])}, thanks for your order! Here's a summary:</p>
      ${itemsTable(order)}
      ${payBlock}
+     ${spamNote(replyToAddress(settings))}
      <p style="font-size:13.5px;">Delivery to: ${esc(order.customer.address)}, ${esc(order.customer.suburb)} ${esc(order.customer.state)} ${esc(order.customer.postcode)}${order.customer.country ? `, ${esc(order.customer.country)}` : ""}</p>`
   );
 }
@@ -291,6 +312,7 @@ export function contactCustomerHtml(m: ContactMessage): string {
        <p style="margin:0 0 6px;font-size:12.5px;color:#7a7061;text-transform:uppercase;letter-spacing:1px;">Your message</p>
        <p style="margin:0;font-size:13.5px;white-space:pre-line;">${esc(m.message)}</p>
      </div>
+     ${spamNote(replyToAddress())}
      <p style="font-size:13.5px;">Need us faster? Reach us on WhatsApp or Telegram from the contact page.</p>`
   );
 }

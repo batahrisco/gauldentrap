@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import SpamNote from "@/components/SpamNote";
 
 const input =
   "w-full rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-sm outline-none transition placeholder:text-muted/60 focus:border-accent";
@@ -54,6 +55,7 @@ export default function ContactForm() {
           Thanks — we&apos;ve emailed you a copy and our team will reply
           shortly. Need us faster? Use WhatsApp or Telegram above.
         </p>
+        <SpamNote variant="sent" className="mt-4" />
       </div>
     );
   }
