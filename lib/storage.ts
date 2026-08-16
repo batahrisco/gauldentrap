@@ -26,32 +26,46 @@ type Store = {
  * If automatic context is unavailable, NETLIFY_SITE_ID + NETLIFY_API_TOKEN
  * are used as the documented manual fallback.
  */
-const stores = new Map<string, Store | null>();
 let lastStoreError: string | null = null;
 
 export function storeError(): string | null {
   return lastStoreError;
 }
 
+/**
+ * NEVER cache the returned store across requests.
+ *
+ * getStore() resolves `globalThis.netlifyBlobsContext` / NETLIFY_BLOBS_CONTEXT
+ * at call time and bakes the siteID **and a short-lived token** into the
+ * client (`this.token`, sent as `Bearer` on every request). Holding that
+ * object in a module-level Map pins one request's token for the whole life
+ * of a warm Lambda container, and caching a `null` pins the failure
+ * permanently — which is what made the dashboard work after a deploy and
+ * then start failing, differently on each container.
+ *
+ * Constructing a store is just an env parse plus an object — no network —
+ * so doing it per call is the correct trade.
+ *
+ * (The Supabase driver this was ported from *is* safe to cache: its client
+ * is built from a static URL and a long-lived service key. The caching
+ * pattern came across with the port; the assumption behind it did not.)
+ */
 async function store(name: string): Promise<Store | null> {
-  if (stores.has(name)) return stores.get(name)!;
-  let resolved: Store | null = null;
   try {
     const { getStore } = await import("@netlify/blobs");
     const siteID = process.env.NETLIFY_SITE_ID;
     const token = process.env.NETLIFY_API_TOKEN;
-    resolved = getStore(
+    const resolved = getStore(
       siteID && token
         ? { name, consistency: "strong", siteID, token }
         : { name, consistency: "strong" }
     ) as unknown as Store;
     lastStoreError = null;
+    return resolved;
   } catch (e) {
     lastStoreError = String((e as Error)?.message ?? e).slice(0, 300);
-    resolved = null;
+    return null;
   }
-  stores.set(name, resolved);
-  return resolved;
 }
 
 /* ── local file driver ── */
